@@ -1,61 +1,82 @@
+class Rule:
+    def __init__(self, left, right):
+        self.left = left
+        self.right = right
+
+    def __eq__(self, other):
+        return self.left == other.left and self.right == other.right
+
+    def __hash__(self):
+        return hash(self.left) + hash(self.right)
+
+
+class Situation:
+    def __init__(self, left_hand_side, right_hand_side, dot, start):
+        self.rule = Rule(left_hand_side, right_hand_side)
+        self.dot = dot
+        self.start = start
+
+    def __eq__(self, other):
+        return self.rule == other.rule and self.dot == other.dot and self.start == other.start
+
+    def __hash__(self):
+        return hash(self.rule) + self.dot + self.start
+
+
 class EarlyParser:
     nonterminals = [chr(number) for number in range(ord('A'), ord('Z'))]
-    letters = [chr(number) for number in range(ord('a'), ord('z'))]
 
     def __init__(self, rules_arg):
         self.rules = rules_arg
         self.D = list()
 
-    def predict(self, j):
-        situations = self.D[j].copy()
+    @staticmethod
+    def predict(rules, D, j):
+        situations = D[j].copy()
         for situation in situations:
-            if situation[2] < len(situation[1]):
-                if situation[1][situation[2]] in EarlyParser.nonterminals:
-                    nonterminal = situation[1][situation[2]]
-                    for right in self.rules[nonterminal]:
-                        self.D[j].add((nonterminal, right, 0, j))
+            if situation.dot < len(situation.rule.right):
+                if situation.rule.right[situation.dot] in EarlyParser.nonterminals:
+                    nonterminal = situation.rule.right[situation.dot]
+                    for right in rules[nonterminal]:
+                        D[j].add(Situation(nonterminal, right, 0, j))
 
-    def scan(self, word, j):
-        for situation in self.D[j]:
-            if situation[2] < len(situation[1]):
-                if situation[1][situation[2]] in self.letters:
-                    if situation[1][situation[2]] == word[j]:
-                        self.D[j + 1].add((situation[0], situation[1], situation[2] + 1, situation[3]))
+    @staticmethod
+    def scan(word, D, j):
+        letters = set(word)
+        for situation in D[j]:
+            if situation.dot < len(situation.rule.right):
+                if situation.rule.right[situation.dot] in letters:
+                    if situation.rule.right[situation.dot] == word[j]:
+                        D[j + 1].add(
+                            Situation(situation.rule.left, situation.rule.right, situation.dot + 1, situation.start))
 
-    def complete(self, j):
-        situations = self.D[j].copy()
+    @staticmethod
+    def complete(D, j):
+        situations = D[j].copy()
         for situation in situations:
-            if situation[2] == len(situation[1]):
-                for second_situation in self.D[situation[3]]:
-                    if second_situation[2] < len(second_situation[1]):
-                        if second_situation[1][second_situation[2]] in EarlyParser.nonterminals:
-                            if second_situation[1][second_situation[2]] == situation[0]:
-                                self.D[j].add((second_situation[0], second_situation[1],
-                                               second_situation[2] + 1, second_situation[3]))
+            if situation.dot == len(situation.rule.right):
+                for second_situation in D[situation.start]:
+                    if second_situation.dot < len(second_situation.rule.right):
+                        if second_situation.rule.right[second_situation.dot] in EarlyParser.nonterminals:
+                            if second_situation.rule.right[second_situation.dot] == situation.rule.left:
+                                D[j].add(Situation(second_situation.rule.left, second_situation.rule.right,
+                                                   second_situation.dot + 1, second_situation.start))
+
+    def predict_complete_loop(self, j):
+        prev_len = len(self.D[j]) - 1
+        while prev_len != len(self.D[j]):
+            prev_len = len(self.D[j])
+            self.predict(self.rules, self.D, j)
+            self.complete(self.D, j)
 
     def is_word_in_language(self, word) -> bool:
         self.D = [set() for i in range(len(word) + 1)]
-        self.letters = set(word)
-        self.D[0].add(("SS", "S", 0, 0))
-        while True:
-            prev_len = len(self.D[0])
-            self.predict(0)
-            self.complete(0)
-            if prev_len == len(self.D[0]):
-                break
-            prev_len = len(self.D[0])
-        print(0, self.D[0])
+        self.D[0].add(Situation("SS", "S", 0, 0))
+        self.predict_complete_loop(0)
         for j in range(1, len(word) + 1):
-            self.scan(word, j - 1)
-            while True:
-                prev_len = len(self.D[j])
-                self.predict(j)
-                self.complete(j)
-                if prev_len == len(self.D[j]):
-                    break
-                prev_len = len(self.D[j])
-            print(j, self.D[j])
-        return ("SS", "S", 1, 0) in self.D[len(word)]
+            self.scan(word, self.D, j - 1)
+            self.predict_complete_loop(j)
+        return Situation("SS", "S", 1, 0) in self.D[len(word)]
 
 
 if __name__ == '__main__':
@@ -67,6 +88,5 @@ if __name__ == '__main__':
             word = rule[0]
             break
         rules.update({rule[0]: rule[1].split('|')})
-    print(rules)
     parser = EarlyParser(rules)
     print(parser.is_word_in_language(word))
